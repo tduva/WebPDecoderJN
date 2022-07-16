@@ -1,0 +1,42 @@
+
+plugins {
+    id "com.github.johnrengelman.shadow" version "6.0.0"
+    id 'application'
+}
+
+application {
+    mainClass = 'webpdecoderjn.App'
+}
+
+ext.mainClass = 'webpdecoderjn.App'
+mainClassName = mainClass
+
+jar {
+    manifest {
+        attributes(
+                'Main-Class': mainClass,
+        )
+    }
+}
+
+repositories {
+    // Use Maven Central for resolving dependencies.
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':lib')
+}
+
+tasks.jar {
+    archiveBaseName.set(rootProject.name+'-TestApp')
+}
+
+// Builds a jar that includes not only the compiled files from this project, but also the .class files from the
+// dependencies.
+shadowJar {
+    manifest {
+        inheritFrom project.tasks.jar.manifest
+    }
+    archiveBaseName.set(rootProject.name+'-TestApp')
+}
