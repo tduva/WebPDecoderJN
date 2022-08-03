@@ -4,24 +4,10 @@ package webpdecoderjn;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.GraphicsEnvironment;
-import java.awt.HeadlessException;
 import java.awt.Rectangle;
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Paths;
-import java.util.Date;
-import java.util.logging.ConsoleHandler;
-import java.util.logging.Filter;
-import java.util.logging.Formatter;
-import java.util.logging.Level;
-import java.util.logging.LogManager;
-import java.util.logging.LogRecord;
 import java.util.logging.Logger;
-import java.util.logging.SimpleFormatter;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
@@ -52,6 +38,8 @@ public class App {
     public static void main(String[] args) {
         Logging.installSingleLineLog();
         System.setProperty("jna.debug_load", "true");
+        // Some servers may reject some default Java user agents
+        System.setProperty("http.agent", "WebP Decoder Test");
         guiTest();
     }
     
@@ -175,23 +163,6 @@ public class App {
         }
         return WebPDecoder.decode(WebPDecoder.getBytesFromURL(url));
     }
-    
-//    private static void showImages(WebPImage... images) {
-//        SwingUtilities.invokeLater(() -> {
-//            JFrame frame = new JFrame();
-//            frame.setLayout(new FlowLayout());
-//            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-//            for (WebPImage image : images) {
-//                for (WebPImageFrame f : image.frames) {
-//                    frame.add(new JLabel(new ImageIcon(f.img)), BorderLayout.CENTER);
-//                }
-//            }
-//            frame.pack();
-//            frame.setLocationRelativeTo(null);
-//            frame.setVisible(true);
-//        });
-//        
-//    }
     
     private static void showError(String message, Throwable ex) {
         if (!GraphicsEnvironment.isHeadless()) {

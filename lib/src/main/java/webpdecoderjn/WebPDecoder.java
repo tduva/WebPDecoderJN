@@ -124,21 +124,6 @@ public class WebPDecoder {
         return libWebPInstance;
     }
     
-//    public static void main(String[] args) {
-//        Path path = Paths.get("C:\\Users\\sb\\AppData\\Local\\Temp\\jna-3663\\jna7931570866194328070.dll");
-//        String n = path.getFileName().toString();
-//        String ext = getFileExtension(n);
-//        System.out.println("'"+ext+"'");
-//        
-//        String namePath = Paths.get("libwebp").getFileName().toString();
-//        if (!namePath.endsWith(ext)) {
-//            namePath += ext;
-//        }
-//        System.out.println(namePath);
-//        
-//        System.out.println(getFileExtension("a.jar"));
-//    }
-    
     /**
      * Extract the library from the JAR and rename it to the correct name, since
      * otherwise the dependency on libwebp.dll doesn't seem to be resolved.
