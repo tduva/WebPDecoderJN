@@ -40,7 +40,7 @@ import java.util.logging.Logger;
  * The native libraries need to be made available before any decoding attempts.
  * Both the {@code libwebp} and {@code libwebpdemux} are required. For some
  * platforms they are packed in the JAR and can be extracted using the
- * {@link init()} function, which must be run before any of the decode or test
+ * {@link #init()} function, which must be run before any of the decode or test
  * functions. You can also place the libraries somewhere they can be found,
  * which may be platform dependent, especially in regards to the dependency of
  * {@code libwebpdemux} on {@code libwebp} works (e.g. on Windows it may have to
@@ -66,7 +66,7 @@ public class WebPDecoder {
 
     /**
      * This function is intended to be used before decoding is attempted (or
-     * {@link test()} is used). Extracts the platform dependent libraries from
+     * {@link #test()} is used). Extracts the platform dependent libraries from
      * the JAR to a temp folder chosen by JNA.
      * 
      * <p>
@@ -184,7 +184,7 @@ public class WebPDecoder {
     // Decoding
     //==========================
     /**
-     * Same as {@link testEx()} but instead of throwing an exception it only
+     * Same as {@link #testEx()} but instead of throwing an exception it only
      * return {@code true} or {@code false}.
      * 
      * @return {@code true} if everything seems ok, {@code false} otherwise

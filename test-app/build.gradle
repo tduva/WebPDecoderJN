@@ -4,6 +4,17 @@ plugins {
     id 'application'
 }
 
+version = '1.0'
+
+repositories {
+    // Use Maven Central for resolving dependencies.
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':lib')
+}
+
 application {
     mainClass = 'webpdecoderjn.App'
 }
@@ -19,15 +30,6 @@ jar {
     }
 }
 
-repositories {
-    // Use Maven Central for resolving dependencies.
-    mavenCentral()
-}
-
-dependencies {
-    implementation project(':lib')
-}
-
 tasks.jar {
     archiveBaseName.set(rootProject.name+'-TestApp')
 }
@@ -40,3 +42,4 @@ shadowJar {
     }
     archiveBaseName.set(rootProject.name+'-TestApp')
 }
+
