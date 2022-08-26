@@ -4,6 +4,7 @@ package webpdecoderjn;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Date;
+import java.util.Locale;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Formatter;
 import java.util.logging.LogManager;
@@ -55,6 +56,16 @@ public class Logging {
         ConsoleHandler c = new ConsoleHandler();
         c.setFormatter(new TextFormatter());
         Logger.getLogger("").addHandler(c);
+    }
+    
+    public static String systemInfo() {
+        return String.format("Java: %s (%s / %s) OS: %s (%s/%s)",
+                System.getProperty("java.version"),
+                System.getProperty("java.vendor"),
+                System.getProperty("java.home"),
+                System.getProperty("os.name"),
+                System.getProperty("os.version"),
+                System.getProperty("os.arch"));
     }
     
 }

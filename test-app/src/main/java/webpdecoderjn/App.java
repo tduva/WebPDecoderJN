@@ -40,6 +40,7 @@ public class App {
         System.setProperty("jna.debug_load", "true");
         // Some servers may reject some default Java user agents
         System.setProperty("http.agent", "WebP Decoder Test");
+        LOGGER.info(Logging.systemInfo());
         guiTest();
     }
     
@@ -75,7 +76,8 @@ public class App {
             // Continue and show GUI
             //--------------------------
             JFrame frame = new JFrame();
-            frame.setTitle("Test WebPDecoder");
+            frame.setTitle(String.format("Test WebPDecoder [%s/%s]",
+                    System.getProperty("os.name"), WebPDecoder.getArch()));
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
             JPanel inputPanel = new JPanel();

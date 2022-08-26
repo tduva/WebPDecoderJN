@@ -96,6 +96,15 @@ public class WebPDecoder {
         }
     }
     
+    /**
+     * Returns the current platform architecture as interpreted by JNA.
+     * 
+     * @return 
+     */
+    public static String getArch() {
+        return Platform.ARCH;
+    }
+    
     private static LibWebP libWebPInstance;
     private static LibWebPDemux LibWebDemuxInstance;
     
@@ -135,7 +144,9 @@ public class WebPDecoder {
     private static Path extractLib(String name) throws IOException {
         Path path = Native.extractFromResourcePath(name).toPath();
         String targetName = makeTargetName(path, name);
-        if (path.getFileName().toString().equals(targetName) || Platform.isLinux()) {
+        if (path.getFileName().toString().equals(targetName)
+                || Platform.isLinux()
+                || Platform.isMac()) {
             // If the file is found on the classpath outside JAR, no renaming
             return path;
         }
