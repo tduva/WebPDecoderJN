@@ -99,7 +99,7 @@ public class WebPDecoder {
     /**
      * Returns the current platform architecture as interpreted by JNA.
      * 
-     * @return 
+     * @return String containing the current arch
      */
     public static String getArch() {
         return Platform.ARCH;
@@ -145,8 +145,7 @@ public class WebPDecoder {
         Path path = Native.extractFromResourcePath(name).toPath();
         String targetName = makeTargetName(path, name);
         if (path.getFileName().toString().equals(targetName)
-                || Platform.isLinux()
-                || Platform.isMac()) {
+                || Platform.isLinux()) {
             // If the file is found on the classpath outside JAR, no renaming
             return path;
         }
@@ -183,6 +182,14 @@ public class WebPDecoder {
      * @return
      */
     private static String makeTargetName(Path path, String name) {
+        if (Platform.isMac()) {
+            if (name.contains("demux")) {
+                return "libwebpdemux.dylib";
+            }
+            else {
+                return "libwebp.dylib";
+            }
+        }
         String ext = getFileExtension(path.getFileName().toString());
         name = Paths.get(name).getFileName().toString();
         if (!name.endsWith(ext)) {
