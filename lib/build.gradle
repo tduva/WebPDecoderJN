@@ -4,7 +4,7 @@ plugins {
     id 'java-library'
 }
 
-version = '1.1'
+version = '1.2'
 
 repositories {
     // Use Maven Central for resolving dependencies.
@@ -29,6 +29,9 @@ tasks.named('test') {
 
 tasks.jar {
     archiveBaseName.set(rootProject.name)
+}
+tasks.javadoc {
+    title = rootProject.name+" "+version+" API";
 }
 tasks.javadocJar {
     archiveBaseName.set(rootProject.name)

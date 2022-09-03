@@ -16,17 +16,15 @@ import java.awt.image.DataBufferInt;
 import java.awt.image.DirectColorModel;
 import java.awt.image.SampleModel;
 import java.awt.image.WritableRaster;
-import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.List;
@@ -37,15 +35,13 @@ import java.util.logging.Logger;
  * Decode a WebP image using native libraries.
  * 
  * <p>
- * The native libraries need to be made available before any decoding attempts.
- * Both the {@code libwebp} and {@code libwebpdemux} are required. For some
- * platforms they are packed in the JAR and can be extracted using the
- * {@link #init()} function, which must be run before any of the decode or test
- * functions. You can also place the libraries somewhere they can be found,
- * which may be platform dependent, especially in regards to the dependency of
- * {@code libwebpdemux} on {@code libwebp} works (e.g. on Windows it may have to
- * be in the same folder with the correct name).
- * 
+ * The native library {@code libwebp_animdecoder} (custom compiled for this from
+ * the libwebp project) needs to be made available before any decoding attempts.
+ * For supported platforms they are packed in the JAR and can be extracted using
+ * the {@link #init()} function, which must be run before any of the decode or
+ * test functions. When not using {@link #init()} JNA will look for the library
+ * in various places (consult the JNA docs for details).
+ *
  * <p>
  * The functions using the native libraries may throw an
  * {@code UnsatisfiedLinkError}. Since this is an error it is recommended to
@@ -60,142 +56,147 @@ public class WebPDecoder {
     //==========================
     // Library Loading
     //==========================
+    private static final String LIB_NAME = "libwebp_animdecoder";
+    
     private static boolean initialized = false;
-    private static volatile String libPath;
-    private static volatile String libPathDemux;
-
+    private static Path libPath = null;
+    
     /**
      * This function is intended to be used before decoding is attempted (or
-     * {@link #test()} is used). Extracts the platform dependent libraries from
+     * {@link #test()} is used). Extracts the platform dependent library from
      * the JAR to a temp folder chosen by JNA.
-     * 
-     * <p>
-     * On Windows the files are renamed back to the original file name (the
-     * "libwebp.dll" file appears to be expected in the same folder as the
-     * "libwebpdemux.dll"). If the files are found on the classpath outside the
-     * JAR (if they have been placed there) likely no renaming will have to be
-     * done.
      *
      * <p>
-     * When this function succeeds, it will explicitly look for the libwebpdemux
-     * file (full path) when loading the library.
-     *
-     * <p>
-     * This function is not required if both libraries (libwebp and
-     * libwebpdemux) are made available differently, as long as they can both be
-     * found, in the same folder.
+     * When this function is not used the regular native library discovery
+     * mechanism of JNA will be used.
      *
      * @throws IOException When extracting a library fails, in which case it may
      * not be possible to decode images
+     * @see #init(boolean)
      */
     public static synchronized void init() throws IOException {
+        init(false);
+    }
+    
+    /**
+     * This function is intended to be used before decoding is attempted (or
+     * {@link #test()} is used). Extracts the platform dependent library from
+     * the JAR to a temp folder chosen by JNA.
+     *
+     * <p>
+     * When this function is not used the regular native library discovery
+     * mechanism of JNA will be used.
+     *
+     * @param nextToJar Check if the native library can be found next to the JAR
+     * (same directory) this class is contained in, otherwise extract from the
+     * JAR as normal
+     * @throws IOException When extracting a library fails, in which case it may
+     * not be possible to decode images
+     */
+    public static synchronized void init(boolean nextToJar) throws IOException {
         if (!initialized) {
-            libPath = extractLib("libwebp").toString();
-            libPathDemux = extractLib("libwebpdemux").toString();
+            if (nextToJar) {
+                libPath = findNextToJar();
+            }
+            if (libPath == null) {
+                libPath = extractLib(LIB_NAME);
+            }
             initialized = true;
         }
     }
     
-    /**
-     * Returns the current platform architecture as interpreted by JNA.
-     * 
-     * @return String containing the current arch
-     */
-    public static String getArch() {
-        return Platform.ARCH;
-    }
-    
     private static LibWebP libWebPInstance;
-    private static LibWebPDemux LibWebDemuxInstance;
     
-    private static synchronized LibWebPDemux libDemux() {
-        if (LibWebDemuxInstance == null) {
-            /**
-             * The demux lib depends on the main lib, so that one should be
-             * loaded first, if necessary. As it is coded, this should happen
-             * anyway, but just in case it is changed.
-             * 
-             * On Linux loading the lib seems to help in order for it to be
-             * found. On Windows the dll seemed to be required in the same
-             * folder with the correct name, although not sure if that is always
-             * the case.
-             */
-            libMain();
-            LibWebDemuxInstance = Native.load(libPathDemux != null ? libPathDemux : "libwebpdemux", LibWebPDemux.class);
-        }
-        return LibWebDemuxInstance;
-    }
-    
-    private static synchronized LibWebP libMain() {
+    private static synchronized LibWebP lib() {
         if (libWebPInstance == null) {
-            libWebPInstance = Native.load(libPath != null ? libPath : "libwebp", LibWebP.class);
+            libWebPInstance = Native.load(libPath != null ? libPath.toString() : LIB_NAME, LibWebP.class);
+            removeLibrary(libPath);
         }
         return libWebPInstance;
     }
     
+    private static Path findNextToJar() {
+        Path jarPath = getJarPath();
+        if (jarPath == null) {
+            if (debugEnabled()) {
+                LOGGER.info("Find library next to JAR: path not found");
+            }
+            return null;
+        }
+        if (debugEnabled()) {
+            LOGGER.info("Find library next to JAR: Checking "+jarPath);
+        }
+        String fileName = null;
+        if (Platform.isWindows()) {
+            fileName = LIB_NAME+".dll";
+        }
+        else if (Platform.isLinux()) {
+            fileName = LIB_NAME+".so";
+        }
+        else if (Platform.isMac()) {
+            fileName = LIB_NAME+".dylib";
+        }
+        if (fileName != null) {
+            Path libPath = jarPath.resolveSibling(fileName);
+            if (Files.isRegularFile(libPath)) {
+                return libPath;
+            }
+            libPath = jarPath.resolveSibling("lib"+fileName);
+            if (Files.isRegularFile(libPath)) {
+                return libPath;
+            }
+        }
+        return null;
+    }
+    
     /**
-     * Extract the library from the JAR and rename it to the correct name, since
-     * otherwise the dependency on libwebp.dll doesn't seem to be resolved.
+     * Extract the library from the JAR.
      *
      * @param name
      * @return
      * @throws IOException
      */
     private static Path extractLib(String name) throws IOException {
-        Path path = Native.extractFromResourcePath(name).toPath();
-        String targetName = makeTargetName(path, name);
-        if (path.getFileName().toString().equals(targetName)
-                || Platform.isLinux()) {
-            // If the file is found on the classpath outside JAR, no renaming
-            return path;
-        }
-        // Put in subfolder per platform, in case both x86 and x64 JRE are used
-        Path newPath = path.resolveSibling(
-                String.format("%s/%s", Platform.RESOURCE_PREFIX, targetName));
-        Files.createDirectories(newPath.getParent());
-        try {
-            if (Objects.equals(System.getProperty("jna.debug_load"), "true")) {
-                LOGGER.info(String.format("Move: %s -> %s", path, newPath));
-            }
-            Files.move(path, newPath, StandardCopyOption.REPLACE_EXISTING);
-        }
-        catch (Exception ex) {
-            // The same file may exist, but e.g. be in use (no overwriting)
-            if (!filesEqual(path, newPath)) {
-                // If not the correct file, it's an error
-                throw ex;
-            }
-        }
-        return newPath;
+        return Native.extractFromResourcePath(name).toPath();
     }
     
     /**
-     * Makes the name the file should have in the end (e.g. libwebp.dll). The
-     * name input is normally just "libwebp", but in case that changes this can
-     * also handle formats such as "/libwebp.dll".
-     *
-     * It takes the file extension (if any) from the path JNA created, but uses
-     * the original name.
-     *
-     * @param path The path JNA created or found
-     * @param name The name that was searched for
-     * @return
+     * This will have to be changed if JNA changes the prefix.
      */
-    private static String makeTargetName(Path path, String name) {
-        if (Platform.isMac()) {
-            if (name.contains("demux")) {
-                return "libwebpdemux.dylib";
-            }
-            else {
-                return "libwebp.dylib";
+    private static final String JNA_TMPLIB_PREFIX = "jna";
+    
+    /**
+     * On Windows JNA can't remove the temp file while it's still in use, so
+     * an ".x" file with the same name is created so it can be deleted on the
+     * next start. When using the extract function directly that is not done by
+     * JNA, so do it here.
+     * 
+     * @param path
+     */
+    private static void removeLibrary(Path path) {
+        if (path == null) {
+            return;
+        }
+        boolean isUnpacked = path.getFileName().toString().startsWith(JNA_TMPLIB_PREFIX);
+        if (!isUnpacked || !Files.isRegularFile(path)) {
+            return;
+        }
+        // Delete, if possible (depending on OS if it's in use)
+        if (path.toFile().delete()) {
+            return;
+        }
+        try {
+            Files.createFile(path.resolveSibling(path.getFileName() + ".x"));
+        }
+        catch (IOException ex) {
+            if (debugEnabled()) {
+                LOGGER.warning("Couldn't create x file for " + path);
             }
         }
-        String ext = getFileExtension(path.getFileName().toString());
-        name = Paths.get(name).getFileName().toString();
-        if (!name.endsWith(ext)) {
-            name += ext;
-        }
-        return name;
+    }
+    
+    private static boolean debugEnabled() {
+        return Objects.equals(System.getProperty("jna.debug_load"), "true");
     }
     
     //==========================
@@ -244,7 +245,7 @@ public class WebPDecoder {
      * Decode a WebP image based on the url in the given String.
      * 
      * @param url The url
-     * @return A decoded WebPImage
+     * @return A decoded {@link WebPImage}
      * @throws IOException When loading the data from the url fails
      * @throws WebPDecoderException When the decoder encounters an issue (e.g.
      * if it's not a valid WebP file)
@@ -262,7 +263,7 @@ public class WebPDecoder {
      * Decode a WebP image.
      * 
      * @param rawData The raw bytes of the image
-     * @return A decoded WebPImage
+     * @return A decoded {@link WebPImage}
      * @throws WebPDecoderException When the decoder encounters an issue (e.g.
      * if it's not a valid WebP file)
      * @throws UnsatisfiedLinkError When there was an issue loading the native
@@ -273,31 +274,31 @@ public class WebPDecoder {
         List<WebPImageFrame> frames = new ArrayList<>();
         Pointer bytes = null;
         Pointer decoder = null;
-        LibWebPDemux.WebPAnimInfo info;
+        LibWebP.WebPAnimInfo info;
         try {
-            bytes = libMain().WebPMalloc(rawData.length);
+            bytes = lib().WebPMalloc(rawData.length);
             bytes.write(0, rawData, 0, rawData.length);
             
-            LibWebPDemux.WebPData data = new LibWebPDemux.WebPData();
+            LibWebP.WebPData data = new LibWebP.WebPData();
             data.bytes = bytes;
-            data.length = new Size_T(rawData.length);
+            data.length = new LibWebP.Size_T(rawData.length);
             
-            decoder = libDemux().WebPAnimDecoderNewInternal(data, null, LibWebPDemux.WEBP_DEMUX_ABI_VERSION);
+            decoder = lib().WebPAnimDecoderNewInternal(data, null, LibWebP.WEBP_DEMUX_ABI_VERSION);
             if (decoder == null) {
                 throw new WebPDecoderException("Failed creating decoder, invalid image?");
             }
 
-            info = new LibWebPDemux.WebPAnimInfo();
-            if (libDemux().WebPAnimDecoderGetInfo(decoder, info) == 0) {
+            info = new LibWebP.WebPAnimInfo();
+            if (lib().WebPAnimDecoderGetInfo(decoder, info) == 0) {
                 throw new WebPDecoderException("Failed getting decoder info");
             }
             
             int prevTimestamp = 0;
-            while (libDemux().WebPAnimDecoderHasMoreFrames(decoder) == 1) {
+            while (lib().WebPAnimDecoderHasMoreFrames(decoder) == 1) {
                 PointerByReference buf = new PointerByReference();
                 IntByReference timestamp = new IntByReference();
                 
-                if (libDemux().WebPAnimDecoderGetNext(decoder, buf, timestamp) == 0) {
+                if (lib().WebPAnimDecoderGetNext(decoder, buf, timestamp) == 0) {
                     throw new WebPDecoderException("Error decoding next frame");
                 }
                 
@@ -310,10 +311,10 @@ public class WebPDecoder {
         }
         finally {
             if (decoder != null) {
-                libDemux().WebPAnimDecoderDelete(decoder);
+                lib().WebPAnimDecoderDelete(decoder);
             }
             if (bytes != null) {
-                libMain().WebPFree(bytes);
+                lib().WebPFree(bytes);
             }
         }
         return new WebPImage(frames, info.canvas_width, info.canvas_height,
@@ -433,12 +434,6 @@ public class WebPDecoder {
             WEBP_EXTERN void WebPFree(void* ptr);
         */
         public void WebPFree(Pointer pointer);
-    }
-    
-    //==========================
-    // libwebpdemux
-    //==========================
-    private interface LibWebPDemux extends Library {
         
         static final int WEBP_DEMUX_ABI_VERSION = 0x0107;
         
@@ -556,29 +551,36 @@ public class WebPDecoder {
             WEBP_EXTERN void WebPAnimDecoderDelete(WebPAnimDecoder* dec);
         */
         public void WebPAnimDecoderDelete(Pointer dec);
-    }
-    
-    /**
-     * Used internally, public for JNA.
-     */
-    public static class Size_T extends IntegerType {
         
-        private static final long serialVersionUID = 1L;
-        
-        public static final Size_T ZERO = new Size_T();
-        
-        public Size_T() {
-            this(0);
+        public static class Size_T extends IntegerType {
+
+            private static final long serialVersionUID = 1L;
+
+            public static final Size_T ZERO = new Size_T();
+
+            public Size_T() {
+                this(0);
+            }
+
+            public Size_T(long value) {
+                super(Native.SIZE_T_SIZE, value, true);
+            }
         }
         
-        public Size_T(long value) {
-            super(Native.SIZE_T_SIZE, value, true);
-        }
     }
     
     //==========================
     // General Helpers
     //==========================
+    /**
+     * Returns the current platform architecture as interpreted by JNA.
+     * 
+     * @return String containing the current arch
+     */
+    public static String getArch() {
+        return Platform.ARCH;
+    }
+    
     /**
      * Read all bytes from the given URL.
      * 
@@ -604,60 +606,19 @@ public class WebPDecoder {
         return result.toByteArray();
     }
     
-    /**
-     * Get the extension of the given file name, if any.
-     *
-     * @param name
-     * @return The extension (including ".") or an empty String
-     */
-    private static String getFileExtension(String name) {
-        int index = name.lastIndexOf('.');
-        if (index < 1 || name.length() == index + 1) {
-            return "";
-        }
-        return name.substring(index);
-    }
-    
-    /**
-     * Check if the given paths are equal, either in path or just content.
-     * 
-     * @param path1
-     * @param path2
-     * @return 
-     */
-    private static boolean filesEqual(Path path1, Path path2) {
+    public static Path getJarPath() {
         try {
-            if (!Files.isRegularFile(path1) || !Files.isRegularFile(path2)) {
-                return false;
+            Path jarPath = Paths.get(WebPDecoder.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            if (!jarPath.toString().endsWith(".jar")
+                    || !Files.exists(jarPath)
+                    || !Files.isRegularFile(jarPath)) {
+                jarPath = null;
             }
-            if (Files.isSameFile(path1, path2)) {
-                return true;
-            }
-            return findByteDifferencePos(path1, path2) == -1;
+            return jarPath;
         }
-        catch (IOException ex) {
-            return false;
-        }
-    }
-    
-    private static long findByteDifferencePos(Path path1, Path path2) throws IOException {
-        try ( BufferedInputStream f1 = new BufferedInputStream(new FileInputStream(path1.toFile())); 
-                BufferedInputStream f2 = new BufferedInputStream(new FileInputStream(path2.toFile()))) {
-
-            int ch = 0;
-            long pos = 1;
-            while ((ch = f1.read()) != -1) {
-                if (ch != f2.read()) {
-                    return pos;
-                }
-                pos++;
-            }
-            if (f2.read() == -1) {
-                return -1;
-            }
-            else {
-                return pos;
-            }
+        catch (URISyntaxException ex) {
+            LOGGER.warning("jar: " + ex);
+            return null;
         }
     }
     

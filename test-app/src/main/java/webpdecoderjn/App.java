@@ -5,6 +5,8 @@ import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
+import java.io.IOException;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Paths;
 import java.util.logging.Logger;
@@ -12,6 +14,7 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -38,34 +41,51 @@ public class App {
     public static void main(String[] args) {
         Logging.installSingleLineLog();
         System.setProperty("jna.debug_load", "true");
+        System.setProperty("jna.nosys", "true");
+        System.setProperty("jna.platform.library.path", "");
+        System.setProperty("jna.librarby.path", "");
         // Some servers may reject some default Java user agents
         System.setProperty("http.agent", "WebP Decoder Test");
         LOGGER.info(Logging.systemInfo());
-        guiTest();
+        String url = null;
+        if (args.length > 0) {
+            url = args[0];
+        }
+        int reps = 0;
+        if (args.length > 1) {
+            reps = Integer.parseInt(args[1]);
+        }
+        guiTest(url, reps);
     }
     
-    private static void guiTest() {
+    private static void guiTest(String url, int reps) {
         SwingUtilities.invokeLater(() -> {
             //--------------------------
             // "Guard clauses"
             //--------------------------
             try {
-                WebPDecoder.init();
-            }
-            catch (Exception | UnsatisfiedLinkError ex) {
-                LOGGER.warning("Error extracting native libs: "+ex);
-                showError("Error extracting native libs", ex);
-                return;
-            }
-            
-            try {
+                WebPDecoder.init(true);
                 WebPDecoder.testEx();
                 LOGGER.info("Test decoding ok.");
             }
             catch (Exception | UnsatisfiedLinkError ex) {
                 LOGGER.warning("Decoder doesn't work: "+ex);
-                showError("Decoder doesn't work", ex);
+                String message = String.format("Decoder doesn't work [%s/%s]",
+                        System.getProperty("os.name"), WebPDecoder.getArch());
+                showError(message, ex);
                 return;
+            }
+            
+            //--------------------------
+            // No GUI performance test
+            //--------------------------
+            if (url != null && reps > 0) {
+                try {
+                    getImage(url, reps);
+                }
+                catch (IOException ex) {
+                    LOGGER.warning("Error loading image: "+ex);
+                }
             }
             
             if (GraphicsEnvironment.isHeadless()) {
@@ -82,10 +102,18 @@ public class App {
 
             JPanel inputPanel = new JPanel();
             JTextArea input = new JTextArea(3, 50);
-            input.setText("https://www.gstatic.com/webp/gallery/4.sm.webp");
+            input.setText(url != null ? url : "https://www.gstatic.com/webp/gallery/4.sm.webp");
             JButton inputButton = new JButton("Load");
             inputPanel.add(new JScrollPane(input));
             inputPanel.add(inputButton);
+            
+            JLabel label = new JLabel("Repetitions: ");
+            label.setToolTipText("Repeat loading the images this many times to test performance.");
+            inputPanel.add(label);
+            
+            JComboBox<Integer> repSelection = new JComboBox<>(new Integer[]{1, 10, 20, 50, 100, 500, 1000});
+            label.setLabelFor(repSelection);
+            inputPanel.add(repSelection);
 
             // For custom test
 //            JButton testButton = new JButton("Test");
@@ -94,7 +122,8 @@ public class App {
             
             JPanel outputPanel = new JPanel();
             outputPanel.setLayout(new BoxLayout(outputPanel, BoxLayout.Y_AXIS));
-            outputPanel.add(new JLabel("Test decoding ok. Enter URL or file path above (or several) to further test WebP decoding."));
+            outputPanel.add(new JLabel("<html><body style='padding:5'>Test decoding ok. WebP decoding appears to work."
+                    + "<br /><br />For further testing enter URL or file path above (or several, one per line)."));
 
             inputButton.addActionListener(e -> {
                 //--------------------------
@@ -107,8 +136,9 @@ public class App {
                     line = line.trim();
                     JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
                     try {
-                        WebPImage image = getImage(line);
-                        panel.add(new JLabel(makeImageInfo(image)));
+                        ImageResult result = getImage(line, (Integer) repSelection.getSelectedItem());
+                        WebPImage image = result.image;
+                        panel.add(new JLabel(makeImageInfo(result)));
                         for (WebPImageFrame f : image.frames) {
                             panel.add(new JLabel(String.format("%d", f.delay), new ImageIcon(f.img), SwingConstants.LEFT));
                         }
@@ -139,11 +169,13 @@ public class App {
         });
     }
     
-    private static String makeImageInfo(WebPImage image) {
-        return String.format("<html><body>%d x %d<br />frames: %d<br />loops: %d<br />bg: %d/%d/%d/%d",
+    private static String makeImageInfo(ImageResult result) {
+        WebPImage image = result.image;
+        return String.format("<html><body>%d x %d<br />frames: %d<br />loops: %d<br />bg: %d/%d/%d/%d<br />%dms load",
                 image.canvasWidth, image.canvasHeight,
                 image.frameCount, image.loopCount,
-                image.bgColor.getRed(), image.bgColor.getGreen(), image.bgColor.getBlue(), image.bgColor.getAlpha());
+                image.bgColor.getRed(), image.bgColor.getGreen(), image.bgColor.getBlue(), image.bgColor.getAlpha(),
+                result.loadTime);
     }
     
     /**
@@ -154,7 +186,23 @@ public class App {
      * @return
      * @throws Exception 
      */
-    private static WebPImage getImage(String line) throws Exception {
+    private static ImageResult getImage(String line, int rep) throws IOException {
+        if (rep < 1) {
+            rep = 1;
+        }
+        LOGGER.info(String.format("Decoding %s (%dx)", line, rep));
+        byte[] data = getBytesFromLine(line);
+        long start = System.currentTimeMillis();
+        WebPImage image = null;
+        for (int i = 0; i < rep; i++) {
+            image = WebPDecoder.decode(data);
+        }
+        long duration = System.currentTimeMillis() - start;
+        LOGGER.info(String.format("Decoding took %dms", duration));
+        return new ImageResult(image, duration);
+    }
+    
+    private static byte[] getBytesFromLine(String line) throws IOException {
         URL url;
         line = line.replace("\"", "");
         if (line.startsWith("http")) {
@@ -163,7 +211,7 @@ public class App {
         else {
             url = Paths.get(line).toUri().toURL();
         }
-        return WebPDecoder.decode(WebPDecoder.getBytesFromURL(url));
+        return WebPDecoder.getBytesFromURL(url);
     }
     
     private static void showError(String message, Throwable ex) {
@@ -211,7 +259,7 @@ public class App {
     }
     
     // For custom test
-//    private static Object blah;
+//    private static Object temp;
 //    
 //    private static void test() {
 //        try {
@@ -219,14 +267,14 @@ public class App {
 //            byte[] data = WebPDecoder.getBytesFromURL(new URL("file:///C:\\Users\\sb\\Downloads\\gwsreg2x.png"));
 //            for (int i=0;i<1000;i++) {
 //                try {
-//                    blah = WebPDecoder.decode(data);
+//                    temp = WebPDecoder.decode(data);
 //                }
 //                catch (Exception ex) {
 ////                    Logger.getLogger(App.class.getName()).log(Level.SEVERE, null, ex);
 //                }
 //            }
 //            System.out.println(System.currentTimeMillis() - start);
-//            blah = null;
+//            temp = null;
 //        }
 //        catch (MalformedURLException ex) {
 //            Logger.getLogger(App.class.getName()).log(Level.SEVERE, null, ex);
@@ -235,5 +283,17 @@ public class App {
 //            Logger.getLogger(App.class.getName()).log(Level.SEVERE, null, ex);
 //        }
 //    }
+    
+    private static class ImageResult {
+        
+        public final WebPImage image;
+        public final long loadTime;
+        
+        public ImageResult(WebPImage image, long loadTime) {
+            this.image = image;
+            this.loadTime = loadTime;
+        }
+        
+    }
     
 }
