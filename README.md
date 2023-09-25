@@ -58,7 +58,7 @@ Optionally parameters can be provided:
 
 ## Compiling the Java library
 
-Run `gradlew build` (personally I use something like `gradlew -Dorg.gradle.java.home="C:/Program Files (x86)/Java/jdk1.8.0_201" %* --console=verbose build` for
+Run `gradlew build` (personally I use something like `gradlew -Dorg.gradle.java.home="C:/Program Files (x86)/Java/jdk1.8.0_201" build --console=verbose` for
 specifying a specific JDK and verbose output). This creates various JAR files
 under `lib/build/libs` and `test-app/build/libs`. The `-all` variants include
 all dependencies.

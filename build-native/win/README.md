@@ -12,7 +12,8 @@ Download and compile libwebp static libraries, as per the
     nmake /f Makefile.vc CFG=release-static RTLIBCFG=static OBJDIR=output
     
 For some reason the output doesn't appear to have header files, but they can be
-taken from elsewhere.
+taken from elsewhere (e.g. from the precompiled packages from the
+[downloads repository](https://storage.googleapis.com/downloads.webmproject.org/releases/webp/index.html)).
 
 ## Step 2: Compile dynamic library
 
